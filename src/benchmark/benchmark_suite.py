@@ -7,11 +7,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
+import os
+from PIL import Image
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
 from .pytorch_renderers import PyTorchMPSRenderer, PyTorchCPURenderer, PyTorchCUDARenderer
 from .numpy_renderer import NumPyRenderer
+from .cpu_optimized_renderer import CPUOptimizedRenderer
+from .compressed_renderer import CompressedNeRFRenderer
 
 
 @dataclass
@@ -33,6 +37,10 @@ class UnifiedBenchmarkSuite:
     def __init__(self):
         self.renderers = []
         self.results = []
+        
+        # Create output directories
+        os.makedirs('outputs', exist_ok=True)
+        os.makedirs('outputs/sample_renders', exist_ok=True)
     
     def add_available_renderers(self):
         """Add all available renderers based on system capabilities."""
@@ -47,6 +55,27 @@ class UnifiedBenchmarkSuite:
             print("✓ NumPy + Numba renderer added")
         except ImportError:
             print("✗ NumPy + Numba renderer failed (missing numba)")
+        
+        # CPU Optimized (always available)
+        try:
+            self.renderers.append(CPUOptimizedRenderer())
+            print("✓ CPU Optimized renderer added")
+        except Exception as e:
+            print(f"✗ CPU Optimized renderer failed: {e}")
+        
+        # Compressed NeRF (always available)
+        try:
+            # Default compression: 8-bit quantization, 10% pruning
+            compressed_config = {
+                'quantization_bits': 8,
+                'pruning_ratio': 0.1,
+                'use_mixed_precision': True,
+                'compress_activations': True
+            }
+            self.renderers.append(CompressedNeRFRenderer(compressed_config))
+            print("✓ Compressed NeRF renderer added")
+        except Exception as e:
+            print(f"✗ Compressed NeRF renderer failed: {e}")
         
         # MPS (Apple Silicon)
         try:
@@ -63,6 +92,36 @@ class UnifiedBenchmarkSuite:
             print("✗ CUDA not available")
         
         print(f"Total renderers: {len(self.renderers)}")
+    
+    def _save_render_samples(self, renderer_name: str, view_idx: int, rgb_img: torch.Tensor, depth_img: torch.Tensor):
+        """Save RGB and depth renders to disk."""
+        # Create renderer-specific directory
+        renderer_dir = f"outputs/sample_renders/{renderer_name.replace(' ', '_')}"
+        os.makedirs(renderer_dir, exist_ok=True)
+        
+        # Convert tensors to numpy and normalize
+        rgb_np = rgb_img.detach().cpu().numpy()
+        depth_np = depth_img.detach().cpu().numpy()
+        
+        # Normalize RGB to 0-255
+        if rgb_np.max() <= 1.0:
+            rgb_np = (rgb_np * 255).astype(np.uint8)
+        else:
+            rgb_np = np.clip(rgb_np, 0, 255).astype(np.uint8)
+        
+        # Normalize depth for visualization
+        depth_normalized = (depth_np - depth_np.min()) / (depth_np.max() - depth_np.min() + 1e-8)
+        depth_vis = (depth_normalized * 255).astype(np.uint8)
+        
+        # Save RGB image
+        rgb_path = f"{renderer_dir}/view_{view_idx}_rgb.png"
+        Image.fromarray(rgb_np).save(rgb_path)
+        
+        # Save depth image
+        depth_path = f"{renderer_dir}/view_{view_idx}_depth.png" 
+        Image.fromarray(depth_vis, mode='L').save(depth_path)
+        
+        return rgb_path, depth_path
     
     def setup_renderers(self, checkpoint_path: str):
         """Setup all renderers with the shared trained model."""
@@ -136,6 +195,14 @@ class UnifiedBenchmarkSuite:
                                 rgb_img, depth_img = renderer.render_image(
                                     pose, resolution, samples_per_ray
                                 )
+                            
+                            # Save sample renders for the first resolution/sample config
+                            if resolution == resolutions[0] and samples_per_ray == samples_per_ray_options[0]:
+                                rgb_path, depth_path = self._save_render_samples(
+                                    renderer.name, view_idx, rgb_img, depth_img
+                                )
+                                if view_idx == 0:  # Only print for first view to avoid spam
+                                    print(f"    💾 Saved renders: {rgb_path}, {depth_path}")
                             
                             times.append(renderer.last_render_time)
                             memory_usages.append(renderer.peak_memory_mb)
@@ -223,10 +290,14 @@ class UnifiedBenchmarkSuite:
                 print(f"   Maximum Speedup vs CPU: {speedup:.1f}x")
         
         # Save results
-        df.to_csv('unified_benchmark_results.csv', index=False)
+        os.makedirs('outputs', exist_ok=True)
+        df.to_csv('outputs/benchmark_results.csv', index=False)
         print(f"\n📊 Results saved to:")
+        print(f"   - outputs/benchmark_results.csv")
+        print(f"   - outputs/sample_renders/ (visual samples)")
+        print(f"   - outputs/performance_comparison.png")
         print(f"   • unified_benchmark_results.csv")
-        print(f"   • unified_performance_comparison.png")
+        print(f"   - outputs/performance_comparison.png")
         
         return df
     
@@ -298,8 +369,8 @@ class UnifiedBenchmarkSuite:
         axes[1,1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig('unified_performance_comparison.png', dpi=150, bbox_inches='tight')
-        plt.show()
+        plt.savefig('outputs/performance_comparison.png', dpi=150, bbox_inches='tight')
+        plt.close()  # Close to free memory
     
     def save_sample_renders(self, checkpoint_path: str, output_dir: str = "sample_renders"):
         """Save sample renders from each method for visual comparison."""
