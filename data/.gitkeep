@@ -1,0 +1,23 @@
+# Data Directory
+
+This directory contains NeRF datasets.
+
+## Expected Structure
+
+```
+data/
+├── nerf_synthetic/     # Synthetic objects (lego, chair, etc.)
+├── nerf_llff_data/     # Real scenes (fern, flower, etc.)
+└── nerf_real_360/      # 360-degree real captures
+```
+
+## Getting Data
+
+Download the official NeRF datasets:
+
+- [Synthetic Objects](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
+- [Real Scenes (LLFF)](https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7)
+
+## Note
+
+Datasets are typically 500MB-2GB and are excluded from git.
