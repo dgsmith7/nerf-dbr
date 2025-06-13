@@ -133,9 +133,6 @@ def run_benchmark(checkpoint_path: str):
     # Generate report
     results_df = suite.generate_report()
     
-    # Save sample renders for visual comparison
-    suite.save_sample_renders(checkpoint_path)
-    
     # Print final summary
     print("\n" + "="*60)
     print("BENCHMARK COMPLETED")
