@@ -49,6 +49,9 @@ sample_renders/
 renders/
 outputs/
 
+# Research notes (private)
+research-notes.md
+
 # Datasets (typically large, downloaded separately)
 data/nerf_synthetic/
 data/nerf_llff_data/
@@ -156,3 +159,17 @@ scratch/
 experiments/
 debug/
 local/
+
+# Active training artifacts (ignore to prevent overwrite)
+quick_render_epoch_*.png
+training_losses.png
+
+# Keep baseline folder - important research data
+!baseline_training_run_500epochs/
+
+# Active training artifacts (not baseline data)
+quick_render_epoch_*.png
+training_losses.png
+
+# Keep baseline folder - important research data
+!baseline_training_run_500epochs/

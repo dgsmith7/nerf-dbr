@@ -23,18 +23,42 @@ from src.benchmark.benchmark_suite import UnifiedBenchmarkSuite
 
 
 def get_default_config() -> Dict:
-    """Get default training configuration."""
+    """Get optimized training configuration for convergence-first approach."""
     return {
         'device': 'mps' if torch.backends.mps.is_available() else 'cpu',
-        'lr': 5e-4,
+        
+        # OPTIMIZED: Reduced learning rate for stability (was 5e-4)
+        'lr': 1e-4,
+        
+        # OPTIMIZED: Gentler decay schedule for stability (was 0.1)
         'lr_decay': 0.1,
-        'decay_steps': 250000,
+        
+        # OPTIMIZED: Longer decay period for stability (was 250000)
+        'decay_steps': 500000,
+        
+        # OPTIMIZED: Smaller batch size for stable gradients (was 1024)
+        'n_rays': 1024,
+        
+        # Sampling configuration (maintain quality)
         'n_coarse': 64,
         'n_fine': 128,
+        
+        # OPTIMIZED: Enhanced model architecture
+        'hidden_dim': 384,                   # Increased capacity (was 256)
+        'position_encoding_levels': 8,       # Reduced for stability (was 10)
+        'direction_encoding_levels': 4,      # Keep current
+        
+        # Memory configuration
         'chunk_size': 1024,
-        'n_rays': 1024,
+        
+        # Scene bounds
         'near': 2.0,
-        'far': 6.0
+        'far': 6.0,
+        
+        # NEW: Stability enhancements
+        'gradient_clipping': 1.0,        # Prevent gradient explosion
+        'weight_decay': 1e-6,            # Light regularization
+        'checkpoint_frequency': 25,       # More frequent checkpoints
     }
 
 

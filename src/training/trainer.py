@@ -29,16 +29,33 @@ class NeRFTrainer:
         self.config = config
         self.device = config.get('device', 'mps' if torch.backends.mps.is_available() else 'cpu')
         
-        # Initialize models
-        self.coarse_model = NeRFModel().to(self.device)
-        self.fine_model = NeRFModel().to(self.device)
+        # Initialize models with optimized architecture
+        hidden_dim = config.get('hidden_dim', 384)  # Increased from 256
+        pos_L = config.get('position_encoding_levels', 8)  # Reduced from 10
+        dir_L = config.get('direction_encoding_levels', 4)  # Keep current
+        
+        self.coarse_model = NeRFModel(
+            pos_L=pos_L, 
+            dir_L=dir_L, 
+            hidden_dim=hidden_dim
+        ).to(self.device)
+        
+        self.fine_model = NeRFModel(
+            pos_L=pos_L, 
+            dir_L=dir_L, 
+            hidden_dim=hidden_dim
+        ).to(self.device)
         
         # Initialize renderer
         self.renderer = VolumeRenderer(self.device)
         
-        # Initialize optimizers
+        # Initialize optimizers with weight decay
         params = list(self.coarse_model.parameters()) + list(self.fine_model.parameters())
-        self.optimizer = optim.Adam(params, lr=config.get('lr', 5e-4))
+        self.optimizer = optim.Adam(
+            params, 
+            lr=config.get('lr', 5e-4),
+            weight_decay=config.get('weight_decay', 0.0)
+        )
         
         # Initialize scheduler
         self.scheduler = optim.lr_scheduler.ExponentialLR(
@@ -51,6 +68,10 @@ class NeRFTrainer:
         self.chunk_size = config.get('chunk_size', 1024)
         self.near = config.get('near', 2.0)
         self.far = config.get('far', 6.0)
+        
+        # OPTIMIZED: Stability parameters
+        self.gradient_clipping = config.get('gradient_clipping', None)
+        self.checkpoint_frequency = config.get('checkpoint_frequency', 50)
         
         # Loss tracking
         self.train_losses = []
@@ -102,6 +123,14 @@ class NeRFTrainer:
         # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
+        
+        # OPTIMIZED: Apply gradient clipping if specified
+        if self.gradient_clipping is not None:
+            torch.nn.utils.clip_grad_norm_(
+                list(self.coarse_model.parameters()) + list(self.fine_model.parameters()),
+                self.gradient_clipping
+            )
+        
         self.optimizer.step()
         self.scheduler.step()
         
@@ -177,7 +206,7 @@ class NeRFTrainer:
                 print(f"Epoch {epoch+1}: Train Loss = {avg_train_loss:.4f}")
             
             # Save checkpoint periodically
-            if (epoch + 1) % 50 == 0:
+            if (epoch + 1) % self.checkpoint_frequency == 0:
                 self.save_checkpoint(f"checkpoint_epoch_{epoch+1}.pth")
         
         print("Training completed!")

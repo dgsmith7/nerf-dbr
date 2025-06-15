@@ -1,0 +1,17 @@
+# Checkpoints Directory
+
+This directory contains trained NeRF model checkpoints.
+
+## Contents
+
+- `final_model.pth` - Main trained model (generated during training)
+- Temporary training checkpoints (auto-cleaned)
+
+## Note
+
+Model files are typically 10-50MB and are excluded from git.
+Download or train your own models using:
+
+```bash
+python main.py --epochs 50
+```
