@@ -167,9 +167,35 @@ training_losses.png
 # Keep baseline folder - important research data
 !baseline_training_run_500epochs/
 
-# Active training artifacts (not baseline data)
-quick_render_epoch_*.png
-training_losses.png
+# Debug, test, and cleanup files - exclude all temporary/development files
+cleanup/
+debug_*.py
+test_*.py
+*_test.py
+*_debug.py
+check_*.py
+compare_*.py
+smoke_test.py
+render_comparison.py
+test_integration.py
+test_layer_*.py
+test_moderngl_*.py
+test_mps_*.py
+test_new_*.py
+test_positional_*.py
+test_pytorch_*.py
+test_system.py
+run_tests.py
+cleanup_test.py
 
-# Keep baseline folder - important research data
-!baseline_training_run_500epochs/
+# Old/corrupted shader files (if any get created)
+*.glsl.bak
+*.glsl.old
+*.glsl.corrupted
+
+# Any other temporary development files
+*_temp.py
+*_tmp.py
+scratch_*.py
+quick_*.py
+!quick_render.py  # Keep the main quick render script
