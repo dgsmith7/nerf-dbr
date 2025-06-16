@@ -158,7 +158,7 @@ class CompressedNeRFRenderer(BaseUnifiedRenderer):
         
         return dequantized
     
-    def _compressed_mlp_forward(self, x: torch.Tensor, 
+    def _compressed_mlp_forward(self, pos_encoded: torch.Tensor, dir_encoded: torch.Tensor,
                                compressed_weights: Dict[str, torch.Tensor],
                                model_name: str) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass using compressed weights."""
@@ -186,14 +186,14 @@ class CompressedNeRFRenderer(BaseUnifiedRenderer):
             else:
                 return torch.nn.functional.linear(input_tensor, weight, bias)
         
-        # Forward pass through compressed network
-        x1 = torch.relu(compressed_linear(x, 'layers.0.weight', 'layers.0.bias'))
+        # Forward pass through compressed network (pos_encoded only for first layers)
+        x1 = torch.relu(compressed_linear(pos_encoded, 'layers.0.weight', 'layers.0.bias'))
         x2 = torch.relu(compressed_linear(x1, 'layers.1.weight', 'layers.1.bias'))
         x3 = torch.relu(compressed_linear(x2, 'layers.2.weight', 'layers.2.bias'))
         x4 = torch.relu(compressed_linear(x3, 'layers.3.weight', 'layers.3.bias'))
         
-        # Skip connection
-        x4_skip = torch.cat([x4, x], dim=1)
+        # Skip connection: concatenate x4 with pos_encoded
+        x4_skip = torch.cat([x4, pos_encoded], dim=1)
         
         x5 = torch.relu(compressed_linear(x4_skip, 'layers.4.weight', 'layers.4.bias'))
         x6 = torch.relu(compressed_linear(x5, 'layers.5.weight', 'layers.5.bias'))
@@ -203,8 +203,8 @@ class CompressedNeRFRenderer(BaseUnifiedRenderer):
         # Output layers
         density = torch.relu(compressed_linear(x8, 'density_head.weight', 'density_head.bias'))
         
-        # Color branch
-        color_input = torch.cat([x8, x[:, -24:]], dim=1)  # Last 24 features are direction encoding
+        # Color branch: concatenate x8 with dir_encoded
+        color_input = torch.cat([x8, dir_encoded], dim=1)
         color_hidden = torch.relu(compressed_linear(color_input, 'color_layers.0.weight', 'color_layers.0.bias'))
         color = torch.sigmoid(compressed_linear(color_hidden, 'color_layers.1.weight', 'color_layers.1.bias'))
         
@@ -215,20 +215,17 @@ class CompressedNeRFRenderer(BaseUnifiedRenderer):
         """Query compressed NeRF networks."""
         
         # Use positional encoding
-        pos_encoded = self.positional_encoding(positions, L=10)
-        dir_encoded = self.positional_encoding(directions, L=4)
-        
-        # Combine encodings
-        input_features = torch.cat([pos_encoded, dir_encoded], dim=-1)
+        pos_encoded = self.positional_encoding(positions, L=10)  # 63 features
+        dir_encoded = self.positional_encoding(directions, L=4)   # 27 features
         
         # Query compressed networks - use fine network by default
         if use_fine:
             density, color = self._compressed_mlp_forward(
-                input_features, self.compressed_fine, "fine"
+                pos_encoded, dir_encoded, self.compressed_fine, "fine"
             )
         else:
             density, color = self._compressed_mlp_forward(
-                input_features, self.compressed_coarse, "coarse"
+                pos_encoded, dir_encoded, self.compressed_coarse, "coarse"
             )
         
         return density, color
@@ -237,22 +234,39 @@ class CompressedNeRFRenderer(BaseUnifiedRenderer):
                                 z_vals: torch.Tensor, ray_directions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Volume rendering with potential activation compression."""
         
+        # Standard volume rendering computation (same as PyTorch MPS renderer)
+        import torch.nn.functional as F
+        
+        # Distance between samples
+        dists = z_vals[..., 1:] - z_vals[..., :-1]
+        # Use a smaller value for half precision compatibility
+        inf_val = 1e4 if self.config['compress_activations'] else 1e10
+        dists = torch.cat([dists, torch.full_like(dists[..., :1], inf_val)], dim=-1)
+        dists = dists * torch.norm(ray_directions[..., None, :], dim=-1)
+        
+        # Apply compression after distance computation if enabled
         if self.config['compress_activations']:
-            # Use half precision for volume rendering
             densities = densities.half()
             colors = colors.half()
-            z_vals = z_vals.half()
-            
-            # Perform volume rendering in half precision
-            rgb, depth = super().execute_volume_rendering(
-                densities, colors, z_vals, ray_directions.half()
-            )
-            
+            dists = dists.half()
+        
+        # Alpha compositing
+        alpha = 1.0 - torch.exp(-F.relu(densities[..., 0]) * dists)
+        transmittance = torch.cumprod(1.0 - alpha + 1e-10, dim=-1)
+        transmittance = torch.cat([torch.ones_like(transmittance[..., :1]), 
+                                 transmittance[..., :-1]], dim=-1)
+        
+        weights = alpha * transmittance
+        
+        # Composite colors and depth
+        rgb_map = torch.sum(weights[..., None] * colors, dim=-2)
+        depth_map = torch.sum(weights * z_vals, dim=-1)
+        
+        if self.config['compress_activations']:
             # Convert back to float
-            return rgb.float(), depth.float()
+            return rgb_map.float(), depth_map.float()
         else:
-            # Use standard volume rendering
-            return super().execute_volume_rendering(densities, colors, z_vals, ray_directions)
+            return rgb_map, depth_map
     
     def _print_compression_stats(self, original_coarse: torch.nn.Module, 
                                 original_fine: torch.nn.Module):

@@ -104,21 +104,21 @@ class PyTorchCPURenderer(BaseUnifiedRenderer):
     
     def execute_volume_rendering(self, densities: torch.Tensor, colors: torch.Tensor,
                                 z_vals: torch.Tensor, ray_directions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """CPU-optimized volume rendering."""
-        # Distance computation
-        dists = torch.diff(z_vals, dim=-1, prepend=z_vals[..., :1])
+        """CPU-optimized volume rendering with correct transmittance formula."""
+        # Distance between samples (same as MPS renderer)
+        dists = z_vals[..., 1:] - z_vals[..., :-1]
+        dists = torch.cat([dists, torch.full_like(dists[..., :1], 1e10)], dim=-1)
         dists = dists * torch.norm(ray_directions[..., None, :], dim=-1)
         
-        # CPU-optimized alpha computation
-        alpha = 1.0 - torch.exp(-torch.clamp(densities[..., 0], min=0) * dists)
-        
-        # Transmittance with numerical stability
-        alpha_shifted = torch.cat([torch.zeros_like(alpha[..., :1]), alpha[..., :-1]], dim=-1)
-        transmittance = torch.exp(-torch.cumsum(alpha_shifted, dim=-1))
+        # Alpha compositing (same as MPS renderer)
+        alpha = 1.0 - torch.exp(-F.relu(densities[..., 0]) * dists)
+        transmittance = torch.cumprod(1.0 - alpha + 1e-10, dim=-1)
+        transmittance = torch.cat([torch.ones_like(transmittance[..., :1]), 
+                                 transmittance[..., :-1]], dim=-1)
         
         weights = alpha * transmittance
         
-        # Composite
+        # Composite colors and depth
         rgb_map = torch.sum(weights[..., None] * colors, dim=-2)
         depth_map = torch.sum(weights * z_vals, dim=-1)
         
