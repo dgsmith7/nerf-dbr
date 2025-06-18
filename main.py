@@ -23,29 +23,29 @@ from src.benchmark.benchmark_suite import UnifiedBenchmarkSuite
 
 
 def get_default_config() -> Dict:
-    """Get optimized training configuration for convergence-first approach."""
+    """Get corrected training configuration for actual convergence."""
     return {
         'device': 'mps' if torch.backends.mps.is_available() else 'cpu',
         
-        # OPTIMIZED: Reduced learning rate for stability (was 5e-4)
-        'lr': 1e-4,
+        # CORRECTED: Increased learning rate for meaningful updates (was 1e-4)
+        'lr': 3e-4,
         
-        # OPTIMIZED: Gentler decay schedule for stability (was 0.1)
+        # CORRECTED: Standard decay schedule (was 0.1)
         'lr_decay': 0.1,
         
-        # OPTIMIZED: Longer decay period for stability (was 250000)
-        'decay_steps': 500000,
+        # CORRECTED: Standard decay period (was 500000)
+        'decay_steps': 250000,
         
-        # OPTIMIZED: Smaller batch size for stable gradients (was 1024)
-        'n_rays': 1024,
+        # CORRECTED: Larger batch size for stable gradients (was 1024)
+        'n_rays': 2048,
         
         # Sampling configuration (maintain quality)
         'n_coarse': 64,
         'n_fine': 128,
         
-        # OPTIMIZED: Enhanced model architecture
-        'hidden_dim': 384,                   # Increased capacity (was 256)
-        'position_encoding_levels': 8,       # Reduced for stability (was 10)
+        # CORRECTED: Enhanced model architecture with balance
+        'hidden_dim': 256,                   # Return to proven baseline (was 384)
+        'position_encoding_levels': 10,      # Return to standard (was 8)
         'direction_encoding_levels': 4,      # Keep current
         
         # Memory configuration
@@ -55,10 +55,10 @@ def get_default_config() -> Dict:
         'near': 2.0,
         'far': 6.0,
         
-        # NEW: Stability enhancements
+        # CORRECTED: Balanced stability enhancements
         'gradient_clipping': 1.0,        # Prevent gradient explosion
         'weight_decay': 1e-6,            # Light regularization
-        'checkpoint_frequency': 25,       # More frequent checkpoints
+        'checkpoint_frequency': 25,      # More frequent checkpoints for monitoring
     }
 
 

@@ -12,6 +12,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from typing import Dict, Optional
+from pathlib import Path
 
 from ..models.nerf import NeRFModel
 from ..data.loader import SyntheticDataset
@@ -29,9 +30,9 @@ class NeRFTrainer:
         self.config = config
         self.device = config.get('device', 'mps' if torch.backends.mps.is_available() else 'cpu')
         
-        # Initialize models with optimized architecture
-        hidden_dim = config.get('hidden_dim', 384)  # Increased from 256
-        pos_L = config.get('position_encoding_levels', 8)  # Reduced from 10
+        # Initialize models with corrected architecture
+        hidden_dim = config.get('hidden_dim', 256)  # Return to proven baseline
+        pos_L = config.get('position_encoding_levels', 10)  # Return to standard
         dir_L = config.get('direction_encoding_levels', 4)  # Keep current
         
         self.coarse_model = NeRFModel(
@@ -124,7 +125,7 @@ class NeRFTrainer:
         self.optimizer.zero_grad()
         loss.backward()
         
-        # OPTIMIZED: Apply gradient clipping if specified
+        # CORRECTED: Apply gradient clipping for stability
         if self.gradient_clipping is not None:
             torch.nn.utils.clip_grad_norm_(
                 list(self.coarse_model.parameters()) + list(self.fine_model.parameters()),
@@ -178,9 +179,40 @@ class NeRFTrainer:
             val_dataset: Validation dataset (optional)
             n_epochs: Number of training epochs
         """
-        print(f"Starting training for {n_epochs} epochs...")
+        # Check for existing checkpoints to resume from
+        start_epoch = 0
+        latest_checkpoint = self._find_latest_checkpoint()
         
-        for epoch in range(n_epochs):
+        if latest_checkpoint:
+            print(f"Found checkpoint: {latest_checkpoint}")
+            checkpoint_data = torch.load(latest_checkpoint, map_location=self.device, weights_only=False)
+            
+            # Load model states
+            self.coarse_model.load_state_dict(checkpoint_data['coarse_model'])
+            self.fine_model.load_state_dict(checkpoint_data['fine_model'])
+            self.optimizer.load_state_dict(checkpoint_data['optimizer'])
+            self.scheduler.load_state_dict(checkpoint_data['scheduler'])
+            
+            # Load training history
+            self.train_losses = checkpoint_data.get('train_losses', [])
+            self.val_losses = checkpoint_data.get('val_losses', [])
+            
+            # Determine start epoch
+            start_epoch = len(self.train_losses)
+            
+            print(f"Resuming training from epoch {start_epoch + 1}/{n_epochs}")
+            print(f"Previous training progress: {start_epoch}/{n_epochs} epochs ({100*start_epoch/n_epochs:.1f}%)")
+        else:
+            print(f"No checkpoint found. Starting training from epoch 1/{n_epochs}")
+        
+        # Skip training if already completed
+        if start_epoch >= n_epochs:
+            print(f"Training already completed! ({start_epoch}/{n_epochs} epochs)")
+            return
+        
+        print(f"Training epochs {start_epoch + 1} to {n_epochs}...")
+        
+        for epoch in range(start_epoch, n_epochs):
             epoch_losses = []
             
             # Training loop
@@ -210,6 +242,31 @@ class NeRFTrainer:
                 self.save_checkpoint(f"checkpoint_epoch_{epoch+1}.pth")
         
         print("Training completed!")
+    
+    def _find_latest_checkpoint(self):
+        """Find the latest checkpoint file."""
+        checkpoint_dir = Path("checkpoints")
+        if not checkpoint_dir.exists():
+            return None
+        
+        # Look for numbered checkpoints
+        epoch_checkpoints = list(checkpoint_dir.glob("checkpoint_epoch_*.pth"))
+        if epoch_checkpoints:
+            # Sort by epoch number
+            epoch_nums = []
+            for cp in epoch_checkpoints:
+                try:
+                    epoch_num = int(cp.stem.split('_')[-1])
+                    epoch_nums.append((epoch_num, cp))
+                except ValueError:
+                    continue
+            
+            if epoch_nums:
+                epoch_nums.sort(key=lambda x: x[0])
+                latest_epoch, latest_path = epoch_nums[-1]
+                return str(latest_path)
+        
+        return None
     
     def _get_rays(self, pose: torch.Tensor, img_shape: tuple, focal: float):
         """Generate rays for given pose and image shape."""

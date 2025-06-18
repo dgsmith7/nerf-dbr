@@ -340,3 +340,171 @@ The hybrid GLSL approach represents the most promising pure-GLSL direction, but 
 ---
 
 _This document captures potential future directions based on lessons learned from the comprehensive GLSL fragment shader investigation, providing a roadmap for continued GPU acceleration research._
+
+---
+
+## 🎮 Real-Time Micro-NeRF for Interactive Rendering
+
+### 📅 **Discussion Date**: June 16, 2025 - Post-Benchmark Training
+
+### 🎯 **The Concept: Backwards-Planned NeRF Architecture**
+
+Following the abandonment of the full-scale GLSL fragment shader approach due to M3 computational limits, an intriguing alternative emerged: **design a NeRF architecture specifically tailored to fragment shader constraints** rather than trying to force the full NeRF architecture into inappropriate hardware limits.
+
+### 🧮 **Computational Budget Analysis**
+
+**M3 Fragment Shader Constraints (Established):**
+
+- Safe operation limit: ~10 million operations per pixel
+- Memory per pixel: <1KB local variables
+- Target resolution: 512×512 (262,144 pixels)
+- Available budget: ~38 operations per pixel per sample
+- At 16 samples per ray: ~600 operations total per pixel
+
+### 🏗️ **Micro-MLP Architecture Design**
+
+**Ultra-Lightweight Network:**
+
+```python
+class MicroNeRF(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Backwards-planned for fragment shader constraints
+        self.pos_encoder = PositionalEncoder(levels=2)  # 2 levels vs 10
+        self.layer1 = nn.Linear(15, 16)  # 15 encoded → 16 neurons
+        self.layer2 = nn.Linear(16, 8)   # 16 → 8
+        self.density = nn.Linear(8, 1)   # 8 → 1 density
+        self.color = nn.Linear(8, 3)     # 8 → 3 RGB
+
+    # Total: ~400 operations per query (within budget!)
+```
+
+**Architecture Tradeoffs:**
+
+- **Layers**: 2-3 maximum (vs 8 in full NeRF)
+- **Neurons**: 16-32 per layer (vs 256 in full NeRF)
+- **Encoding**: 2-3 levels (vs 10 in full NeRF)
+- **Skip connections**: None (too expensive)
+- **Activations**: Simplified or eliminated
+
+### 🎨 **8-Bit/Retro Dataset Strategy**
+
+**Perfect Use Case - Retro Gaming Aesthetic:**
+
+- 8-bit/16-bit era 3D graphics naturally complement computational constraints
+- Simple geometric shapes, limited color palettes
+- "Low-fi" aesthetic makes reduced fidelity acceptable
+- Nostalgia factor adds appeal to technical demonstration
+
+**Dataset Options:**
+
+1. **Minecraft-style voxel objects** - geometric primitives, blocky textures
+2. **Classic arcade 3D models** - Pac-Man, Space Invaders in 3D
+3. **N64/PS1 era assets** - low-poly models, flat shading
+4. **Generated retro scenes** - simple geometric objects with 8-bit styling
+
+**Rendering Specifications:**
+
+- Training resolution: 64×64 to 128×128
+- Color palette: 8-16 colors maximum
+- Lighting: Flat/simple (no complex shadows)
+- Geometry: <500 polygons per object
+
+### 🎮 **Interactive Real-Time Demo**
+
+**Target Performance:**
+
+- **60 FPS** at 512×512 resolution
+- **Real-time camera controls** (WASD + mouse)
+- **Instant object switching** (1-9 keys)
+- **Sub-10ms render times**
+
+**Control Scheme:**
+
+```
+WASD: Camera movement around object
+Mouse: View rotation
+Q/E: Zoom in/out
+1-9: Switch between objects
+Space: Toggle wireframe/debug modes
+R: Reset camera position
+```
+
+**Technical Implementation:**
+
+- Ultra-fast GLSL fragment shader
+- 8 samples per ray maximum
+- Shared computation across nearby pixels
+- Pre-computed lookup tables where possible
+
+### 🌟 **Potential Impact**
+
+**Research Significance:**
+
+- **First real-time NeRF** on consumer hardware fragment shaders
+- **Novel micro-architecture** research pushing efficiency limits
+- **Practical mobile/embedded** applications
+- **Educational framework** for computational trade-offs
+
+**Applications:**
+
+- Mobile AR/VR with real-time neural rendering
+- Embedded systems with NeRF capability
+- Interactive NeRF editing and manipulation
+- Retro gaming with modern AI techniques
+
+### 📋 **Development Roadmap**
+
+**Phase 1: Proof of Concept (1-2 weeks)**
+
+- Train Micro-NeRF on single Minecraft-style block
+- Implement basic GLSL fragment shader
+- Achieve stable 30+ FPS rendering
+
+**Phase 2: Interactive Demo (2-3 weeks)**
+
+- Add camera controls and object switching
+- Optimize rendering pipeline
+- Multiple object support
+
+**Phase 3: Dataset & Polish (2-4 weeks)**
+
+- Create comprehensive 8-bit object dataset
+- Train on diverse retro-style models
+- UI improvements and visual effects
+
+### 🎯 **Success Metrics**
+
+**Technical Targets:**
+
+- Stable 60 FPS at 512×512 resolution
+- <10ms render time per frame
+- Smooth camera movement and object switching
+- No GPU hangs or crashes (unlike full NeRF attempt)
+
+**Quality Targets:**
+
+- Recognizable object shapes and basic details
+- Consistent rendering across viewpoints
+- Acceptable 8-bit/retro aesthetic quality
+- Real-time interaction responsiveness
+
+### 💡 **Why This Approach Could Succeed**
+
+**Lessons from GLSL Investigation:**
+
+- **Computational limits are absolute** - must design within them
+- **Architectural compatibility** matters more than raw performance
+- **Fragment shaders excel** at simple per-pixel operations
+- **Timeout limits** require sub-millisecond per-pixel computation
+
+**Advantages of Backwards Planning:**
+
+- **Constraints drive innovation** rather than limit it
+- **Realistic expectations** based on hardware capabilities
+- **Novel research direction** in ultra-efficient neural rendering
+- **Practical applications** for resource-constrained environments
+
+This approach transforms the "limitation" of fragment shader constraints into a **design opportunity** for creating the first real-time NeRF renderer on consumer hardware, while maintaining the nostalgic appeal of retro gaming aesthetics.
+
+---
